@@ -1,0 +1,12 @@
+**/target/
+**/parking-pos-data.mv.db
+**/parking-pos-data.trace.db
+.idea/
+*.iml
+backend/backups/
+**/preview-pos-data*.db
+/backend/application.properties
+.env
+.env.*
+!.env.example
+/backend/migration-backups/

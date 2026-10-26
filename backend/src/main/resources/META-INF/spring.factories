@@ -1,0 +1,1 @@
+org.springframework.boot.env.EnvironmentPostProcessor=lk.sahan.parking.config.LocalEnvironment
