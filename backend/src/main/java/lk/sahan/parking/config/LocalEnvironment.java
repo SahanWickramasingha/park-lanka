@@ -20,6 +20,20 @@ public class LocalEnvironment implements EnvironmentPostProcessor, Ordered {
                     new MapPropertySource("parkingLocalEnv", values));
         }
         boolean h2 = Arrays.stream(env.getActiveProfiles()).anyMatch(p -> p.equals("h2") || p.equals("test"));
+        if (Arrays.asList(env.getActiveProfiles()).contains("neon")) {
+            if (h2) throw new IllegalStateException("The neon profile cannot be combined with h2/test.");
+            Map<String, String> injected = new HashMap<>();
+            env.getSystemEnvironment().forEach((key, value) -> injected.put(key, value.toString()));
+            Map<String, Object> cloud = new HashMap<>(NeonEnvironment.load(Path.of(""), injected));
+            // Enforce the explicit cloud destination even if local datasource settings exist.
+            cloud.put("spring.datasource.url", cloud.get("DATABASE_URL"));
+            cloud.put("spring.datasource.username", cloud.get("DATABASE_USER"));
+            cloud.put("spring.datasource.password", cloud.get("DATABASE_PASSWORD"));
+            cloud.put("spring.flyway.url", cloud.get("FLYWAY_DATABASE_URL"));
+            cloud.put("spring.flyway.user", cloud.get("FLYWAY_DATABASE_USER"));
+            cloud.put("spring.flyway.password", cloud.get("FLYWAY_DATABASE_PASSWORD"));
+            env.getPropertySources().addFirst(new MapPropertySource("parkingNeon", cloud));
+        }
         validate(env.getProperty("spring.datasource.url", ""), env.getProperty("spring.datasource.username", ""),
                 env.getProperty("spring.datasource.password", ""), h2,
                 env.getProperty("parking.admin-username", ""), env.getProperty("parking.admin-password", ""));
@@ -76,5 +90,10 @@ public class LocalEnvironment implements EnvironmentPostProcessor, Ordered {
     public static Map<String, String> settings() {
         Map<String, String> settings = new HashMap<>(load(Path.of(""), System.getenv("PARKING_ENV_FILE")));
         settings.putAll(System.getenv()); return settings;
+    }
+    public static Map<String, String> neonSettings() {
+        Map<String, String> settings = new HashMap<>(settings());
+        settings.putAll(NeonEnvironment.load(Path.of(""), System.getenv()));
+        return settings;
     }
 }

@@ -2,7 +2,7 @@
   <modelVersion>4.0.0</modelVersion>
   <parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId><version>3.5.16</version><relativePath/></parent>
   <groupId>lk.sahan</groupId><artifactId>parking-backend</artifactId><version>0.2.0</version>
-  <properties><java.version>17</java.version></properties>
+  <properties><java.version>17</java.version><parking.build.directory>${project.basedir}/target</parking.build.directory></properties>
   <dependencies>
     <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId></dependency>
     <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-database-postgresql</artifactId></dependency>
@@ -16,7 +16,23 @@
     <dependency><groupId>org.springframework.security</groupId><artifactId>spring-security-test</artifactId><scope>test</scope></dependency>
   </dependencies>
   <build>
-    <resources><resource><directory>src/main/resources</directory><excludes><exclude>**/.env</exclude><exclude>**/.env.*</exclude></excludes></resource></resources>
+    <directory>${parking.build.directory}</directory>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+        <excludes>
+          <exclude>**/.env</exclude><exclude>**/.env.*</exclude>
+          <exclude>**/*.env</exclude><exclude>**/*.env.*</exclude>
+          <exclude>**/*.pem</exclude><exclude>**/*.key</exclude>
+          <exclude>**/*.p12</exclude><exclude>**/*.pfx</exclude><exclude>**/*.jks</exclude>
+          <exclude>**/node_modules/**</exclude><exclude>**/target/**</exclude>
+          <exclude>**/build/**</exclude><exclude>**/dist/**</exclude><exclude>**/original/**</exclude>
+          <exclude>**/backups/**</exclude><exclude>**/migration-backups/**</exclude>
+          <exclude>**/*.log</exclude><exclude>**/*.db</exclude><exclude>**/*.db.*</exclude>
+          <exclude>**/*.dump</exclude><exclude>**/*.backup</exclude>
+        </excludes>
+      </resource>
+    </resources>
     <plugins>
     <plugin>
       <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
@@ -29,11 +45,18 @@
           <excludedEnvironmentVariable>DATABASE_URL</excludedEnvironmentVariable>
           <excludedEnvironmentVariable>DATABASE_USER</excludedEnvironmentVariable>
           <excludedEnvironmentVariable>DATABASE_PASSWORD</excludedEnvironmentVariable>
+          <excludedEnvironmentVariable>DATABASE_URL_UNPOOLED</excludedEnvironmentVariable>
           <excludedEnvironmentVariable>PARKING_ADMIN_USER</excludedEnvironmentVariable>
           <excludedEnvironmentVariable>PARKING_ADMIN_PASSWORD</excludedEnvironmentVariable>
           <excludedEnvironmentVariable>SPRING_DATASOURCE_URL</excludedEnvironmentVariable>
           <excludedEnvironmentVariable>SPRING_DATASOURCE_USERNAME</excludedEnvironmentVariable>
           <excludedEnvironmentVariable>SPRING_DATASOURCE_PASSWORD</excludedEnvironmentVariable>
+          <excludedEnvironmentVariable>SPRING_FLYWAY_URL</excludedEnvironmentVariable>
+          <excludedEnvironmentVariable>SPRING_FLYWAY_USER</excludedEnvironmentVariable>
+          <excludedEnvironmentVariable>SPRING_FLYWAY_PASSWORD</excludedEnvironmentVariable>
+          <excludedEnvironmentVariable>SPRING_APPLICATION_JSON</excludedEnvironmentVariable>
+          <excludedEnvironmentVariable>SPRING_CONFIG_LOCATION</excludedEnvironmentVariable>
+          <excludedEnvironmentVariable>SPRING_CONFIG_ADDITIONAL_LOCATION</excludedEnvironmentVariable>
         </excludedEnvironmentVariables>
       </configuration>
     </plugin>

@@ -1,0 +1,29 @@
+# Only Maven's current build inputs enter the context. This excludes root env files,
+# target, backups, migration-backups, logs, IDE settings, scripts, and node_modules.
+**
+!pom.xml
+!src/
+!src/**
+# Re-exclude sensitive/local artifacts even if placed inside src later.
+**/.env
+**/.env.*
+**/*.env
+**/*.env.*
+**/target
+**/node_modules
+**/backups
+**/migration-backups
+**/original
+**/dist
+**/build
+**/logs
+**/*.log
+**/*.db
+**/*.db.*
+**/*.dump
+**/*.backup
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.jks

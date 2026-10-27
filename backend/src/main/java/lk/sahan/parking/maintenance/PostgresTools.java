@@ -27,6 +27,10 @@ public final class PostgresTools {
                 String key = URLDecoder.decode(setting[0], StandardCharsets.UTF_8);
                 String value = URLDecoder.decode(setting[1], StandardCharsets.UTF_8);
                 if (key.equals("ssl") && value.equals("true")) result.put("PGSSLMODE", "verify-full");
+                else if (key.equals("sslfactory") && value.equals("org.postgresql.ssl.DefaultJavaSSLFactory")) {
+                    // libpq 17+ equivalent of Java's trusted CA store; never disable verification.
+                    result.putIfAbsent("PGSSLROOTCERT", "system");
+                }
                 else if (key.equals("socketTimeout")) { /* JDBC-only read timeout. */ }
                 else if (supported.containsKey(key)) result.put(supported.get(key), value);
                 else throw new IllegalArgumentException();

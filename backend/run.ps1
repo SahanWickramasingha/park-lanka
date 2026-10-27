@@ -1,4 +1,4 @@
-param([string]$MavenCommand)
+param([string]$MavenCommand, [string]$BuildDirectory)
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
@@ -23,8 +23,14 @@ try {
     if ($env:JAVA_HOME) { $taskJava = Join-Path $env:JAVA_HOME 'bin\java.exe' }
     Write-Host 'Building Parking POS backend 0.2.0 from the correct backend directory.'
     Write-Host 'Existing databases require the verified backup/adoption procedure in UPGRADE.md. Stop only the prior project backend before starting this one.'
-    & $MavenCommand -DskipTests package
+    $taskBuildArgs = @('-DskipTests')
+    $taskJarDirectory = Join-Path $PSScriptRoot 'target'
+    if ($BuildDirectory) {
+        $taskJarDirectory = [IO.Path]::GetFullPath($BuildDirectory)
+        $taskBuildArgs += "-Dparking.build.directory=$taskJarDirectory"
+    }
+    & $MavenCommand @taskBuildArgs package
     if ($LASTEXITCODE -ne 0) { throw 'Backend packaging failed.' }
-    & $taskJava -jar "$PSScriptRoot\target\parking-backend-0.2.0.jar"
+    & $taskJava -jar (Join-Path $taskJarDirectory 'parking-backend-0.2.0.jar')
     if ($LASTEXITCODE -ne 0) { throw 'Backend startup failed; inspect the error above and UPGRADE.md.' }
 } finally { Pop-Location }

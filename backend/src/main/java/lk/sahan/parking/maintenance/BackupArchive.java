@@ -9,7 +9,7 @@ import java.time.Instant;
 
 /** Versioned, checksummed envelope. No datasource credentials are included. */
 public final class BackupArchive {
- public static final int CURRENT_SCHEMA=10;
+ public static final int CURRENT_SCHEMA=11;
  private static final long MAX_BYTES=50L*1024*1024*1024;
  private static final ObjectMapper JSON=new ObjectMapper();
  public record Manifest(String format,int formatVersion,int schemaVersion,String engine,String createdAt,long bytes,String sha256){}
