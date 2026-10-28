@@ -190,10 +190,11 @@ try {
         $taskGeneratedInstaller = Join-Path $taskOutput "installer\Park Lanka-$taskVersion.exe"
         if (-not (Test-Path -LiteralPath $taskGeneratedInstaller -PathType Leaf)) { throw "jpackage did not produce the expected installer: $taskGeneratedInstaller" }
         # Rename only the output file: keep Park Lanka's embedded product/upgrade identity.
-        Rename-Item -LiteralPath $taskGeneratedInstaller -NewName 'Setup.exe'
-        $taskInstaller = Join-Path $taskOutput 'installer\Setup.exe'
+        $taskInstallerName = "Park Lanka Setup v$taskVersion.exe"
+        Rename-Item -LiteralPath $taskGeneratedInstaller -NewName $taskInstallerName
+        $taskInstaller = Join-Path $taskOutput ("installer\" + $taskInstallerName)
         Write-Host "Installer ready: $taskInstaller"
-        Write-Host 'Distribute Setup.exe alone; it includes the application, dependencies and Java runtime.'
+        Write-Host "Distribute $taskInstallerName alone; it includes the application, dependencies and Java runtime."
         $taskInstallerFolder = (Split-Path $taskInstaller -Parent).Replace("'", "''")
         Write-Host "Open output folder: Invoke-Item -LiteralPath '$taskInstallerFolder'"
     }

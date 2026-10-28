@@ -54,7 +54,7 @@ Changed files:
 Built with JDK/jpackage 17.0.10 and WiX 3.14.1:
 
 ```text
-C:\Users\WW\Desktop\Parking-POS-SpringBoot-JavaFX-MVP\parking-pos\desktop\target\windows\build-20261028-132954-13a83645\installer\Setup.exe
+C:\Users\WW\Desktop\Parking-POS-SpringBoot-JavaFX-MVP\parking-pos\desktop\target\windows\build-20261028-132954-13a83645\installer\Park Lanka Setup v0.2.2.exe
 ```
 
 Open its folder:

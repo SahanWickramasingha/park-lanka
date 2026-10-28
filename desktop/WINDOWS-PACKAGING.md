@@ -10,7 +10,7 @@ The packaging script resolves an x64 JDK 17 from `-JavaHome`, `JAVA_HOME`, `C:\P
 
 `run.ps1` runs `package javafx:run` without `clean`, so development launch works while a packaged app-image is open. Windows locks the running image's bundled runtime files. An explicit `mvn clean` deletes `desktop/target`, including generated app-images, and fails if an app running there still holds those files open. Close that packaged app before an intentional clean build.
 
-The latest login connection fix is **0.2.2**. See [Login startup and connection diagnosis](LOGIN-CONNECTION.md) for the evidence, bounded 240-second readiness flow, Cancel/Retry behavior, regression results and exact updated `Setup.exe` path. The earlier verification entries below describe their dated builds.
+The latest login connection fix is **0.2.2**. See [Login startup and connection diagnosis](LOGIN-CONNECTION.md) for the evidence, bounded 240-second readiness flow, Cancel/Retry behavior, regression results and exact updated `Park Lanka Setup v0.2.2.exe` path. The earlier verification entries below describe their dated builds.
 
 ## Supplied artwork
 
@@ -62,7 +62,7 @@ After installing WiX 3.x (the confirmed v3.14 location is discovered automatical
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\desktop\package-windows.ps1 -Type exe
 ```
 
-`exe` is the default type. This builds an app-image first, then writes **`installer/Setup.exe`** under that build's directory and prints its full path and an exact PowerShell command to open the output folder. Distribute **only `Setup.exe`**: its embedded MSI contains the application, linked JDK 17 runtime, Windows JavaFX native libraries and all runtime dependencies. Renaming the jpackage output does not change the embedded Park Lanka product identity. WiX is checked before building an EXE; use `-Type app-image` if WiX is unavailable. `-OutputDirectory` accepts a fresh directory relative to the caller or an absolute path; existing directories are refused.
+`exe` is the default type. This builds an app-image first, then writes **`installer/Park Lanka Setup v<version>.exe`** (currently `Park Lanka Setup v0.2.2.exe`) under that build's directory and prints its full path and an exact PowerShell command to open the output folder. Distribute **only that installer EXE**: its embedded MSI contains the application, linked JDK 17 runtime, Windows JavaFX native libraries and all runtime dependencies. The filename version comes from `pom.xml`. Renaming the jpackage output does not change the embedded Park Lanka product identity. WiX is checked before building an EXE; use `-Type app-image` if WiX is unavailable. `-OutputDirectory` accepts a fresh directory relative to the caller or an absolute path; existing directories are refused.
 
 The target is Windows x64. It needs internet access to the hosted API, but no installed Java, Maven, WiX or PostgreSQL. The backend API and Neon database remain separate services and are not shipped or changed. The default API is `https://park-lanka.onrender.com`; **Connection settings** and existing URL overrides remain available. Existing saved user settings may override the default. Installed users can uninstall **Park Lanka** from Windows **Settings > Apps**. Start Menu and desktop shortcuts launch the bundled runtime.
 
