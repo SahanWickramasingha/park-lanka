@@ -131,7 +131,9 @@ final class CheckoutParkingChecks {
     long id=Long.parseLong(path.substring(path.lastIndexOf('/')+1));synchronized(this){var row=(com.fasterxml.jackson.databind.node.ObjectNode)(receipts.containsKey(id)?receipts.get(id):parked.get(id)).deepCopy();row.put("id",id).put("enteredBy","checkout.parking.fixture").put("status",receipts.containsKey(id)?"Completed":"Parked");send(e,200,row.toString());}return;
    }
    if(path.endsWith("/ticket/reprints")){long id=Long.parseLong(path.split("/")[3]);JsonNode row;synchronized(this){row=receipts.get(id);}var ticket=(com.fasterxml.jackson.databind.node.ObjectNode)row.deepCopy();ticket.put("id",id).put("opaqueIdentifier",UUID.randomUUID().toString()).put("pricingSummary","Original entry pricing");send(e,200,ticket.toString());return;}
-   if(path.equals("/api/me")){send(e,200,"{\"role\":\"CASHIER\",\"branchId\":1,\"branchName\":\"Main Branch\"}");return;}
+   if(path.equals("/api/me")){
+    if(e.getRequestHeaders().getFirst("Authorization")==null){e.getResponseHeaders().set("WWW-Authenticate","Basic realm=\"Realm\"");send(e,401,"");return;}
+    send(e,200,"{\"role\":\"CASHIER\",\"branchId\":1,\"branchName\":\"Main Branch\"}");return;}
    if(path.equals("/api/notifications")){send(e,200,"{\"rows\":[],\"important\":[],\"unread\":0,\"highestPriority\":\"Neutral\",\"pages\":0,\"total\":0}");return;}
    if(path.equals("/api/shifts/current")){int count;synchronized(this){count=receipts.size();}send(e,200,"{\"active\":true,\"shift\":{\"id\":51,\"branch\":\"Main Branch\",\"openingCash\":100,\"expectedCash\":"+(100+count*350)+"}}");return;}
    if(path.equals("/api/slots")){if(failSlots.getAndSet(false))send(e,503,"{\"error\":\"Fixture parking refresh unavailable\"}");else send(e,200,slots());return;}

@@ -70,6 +70,20 @@ public class ApiClient {
     }
 
     public JsonNode get(String path) throws IOException, InterruptedException { return call("GET", path, null); }
+    /** No credentials are sent. A Basic challenge proves the existing API listener is ready. */
+    record Readiness(int statusCode, boolean ready) {}
+    Readiness probeReadiness(Duration timeout) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(base + "/api/me")).timeout(timeout)
+                .header("Accept", "application/json").GET().build();
+        HttpResponse<Void> response = exchange(request, HttpResponse.BodyHandlers.discarding(), timeout);
+        boolean challenge = response.headers().allValues("WWW-Authenticate").stream()
+                .anyMatch(value -> value.matches("(?i)^Basic(?:\\s.*)?$"));
+        return new Readiness(response.statusCode(), response.statusCode() == 401 && challenge);
+    }
+    /** Authentication is submitted once, only after the startup probe has succeeded. */
+    JsonNode authenticate(Duration timeout) throws IOException, InterruptedException {
+        return mapper.readTree(request("GET", "/api/me", null, false, timeout, true));
+    }
     public JsonNode post(String path, Object data) throws IOException, InterruptedException { return call("POST", path, data); }
     public JsonNode put(String path, Object data) throws IOException, InterruptedException { return call("PUT", path, data); }
     public JsonNode delete(String path) throws IOException, InterruptedException { return call("DELETE", path, null); }
@@ -99,24 +113,21 @@ public class ApiClient {
     }
 
     private byte[] request(String method, String path, Object data, boolean report) throws IOException, InterruptedException {
-        CompletableFuture<HttpResponse<byte[]>> pending;
+        return request(method, path, data, report, Duration.ofSeconds(report ? 120 : 15), false);
+    }
+
+    private byte[] request(String method, String path, Object data, boolean report, Duration timeout, boolean startup) throws IOException, InterruptedException {
+        HttpRequest built;
         synchronized (this) {
             if (token == null) throw new IOException("Logged out. Sign in again.");
-            HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(base + path)).timeout(Duration.ofSeconds(report ? 120 : 15))
+            HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(base + path)).timeout(timeout)
                     .header("Authorization", "Basic " + token).header("Accept", report ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/json");
             if (data == null && method.equals("GET")) request.GET();
             else if (data == null && method.equals("DELETE")) request.DELETE();
             else request.header("Content-Type", "application/json").method(method, HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(data)));
-            pending = client.sendAsync(request.build(), HttpResponse.BodyHandlers.ofByteArray()); requests.add(pending);
+            built = request.build();
         }
-        HttpResponse<byte[]> response;
-        try { response = pending.get(); }
-        catch (ExecutionException | CancellationException ex) {
-            if(!isActive())throw new IOException("Logged out",ex);
-            throw new NetworkFailure(ex.getCause()==null?ex:ex.getCause());
-        }
-        catch (InterruptedException ex) { pending.cancel(true); throw ex; }
-        finally { requests.remove(pending); }
+        HttpResponse<byte[]> response = exchange(built, HttpResponse.BodyHandlers.ofByteArray(), startup ? timeout : null);
         if (response.statusCode() / 100 != 2) {
             String reason = new String(response.body(), StandardCharsets.UTF_8);
             try { reason = mapper.readTree(reason).path("error").asText(reason); } catch (Exception ignored) { }
@@ -130,5 +141,24 @@ public class ApiClient {
             throw failure;
         }
         return response.body();
+    }
+
+    private <T> HttpResponse<T> exchange(HttpRequest request, HttpResponse.BodyHandler<T> handler, Duration responseBudget) throws IOException, InterruptedException {
+        CompletableFuture<HttpResponse<T>> pending;
+        synchronized (this) {
+            if (token == null) throw new IOException("Logged out. Sign in again.");
+            pending = client.sendAsync(request, handler); requests.add(pending);
+        }
+        try { return responseBudget == null ? pending.get() : pending.get(responseBudget.toNanos(), TimeUnit.NANOSECONDS); }
+        catch (TimeoutException ex) {
+            // Startup bounds include body receipt, even if headers arrived before the deadline.
+            pending.cancel(true); throw new NetworkFailure(new HttpTimeoutException("Startup request deadline exceeded"));
+        }
+        catch (ExecutionException | CancellationException ex) {
+            if (!isActive()) throw new IOException("Logged out", ex);
+            throw new NetworkFailure(ex.getCause() == null ? ex : ex.getCause());
+        }
+        catch (InterruptedException ex) { pending.cancel(true); throw ex; }
+        finally { requests.remove(pending); }
     }
 }

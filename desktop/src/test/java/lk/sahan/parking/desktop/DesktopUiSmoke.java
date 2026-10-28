@@ -59,6 +59,7 @@ public final class DesktopUiSmoke {
             checkMessageErrors();
             CountDownLatch ready = new CountDownLatch(1); Platform.startup(ready::countDown); check(ready.await(5, TimeUnit.SECONDS), "JavaFX startup timed out");
             Platform.setImplicitExit(false);
+            LoginStartupChecks.run();
             fx(()->{try{PrintLayoutChecks.run(output.resolve("print-documents"));return null;}catch(Exception ex){throw new CompletionException(ex);}});
             CheckoutFlowChecks.run();
             CheckoutParkingChecks.run();
@@ -562,6 +563,9 @@ public final class DesktopUiSmoke {
                 exchange.sendResponseHeaders(200, REPORT_BYTES.length); exchange.getResponseBody().write(REPORT_BYTES); exchange.close(); return;
             }
             if (path.equals("/api/me")) {
+                if (exchange.getRequestHeaders().getFirst("Authorization") == null) {
+                    exchange.getResponseHeaders().set("WWW-Authenticate", "Basic realm=\"Realm\""); send(exchange, 401, ""); return;
+                }
                 logins.incrementAndGet(); String auth = new String(Base64.getDecoder().decode(exchange.getRequestHeaders().getFirst("Authorization").substring(6)), StandardCharsets.UTF_8);
                 if(auth.startsWith("cashier.preview:")&&cashierLoggedIn.compareAndSet(false,true)){noticeRead.set(false);messageRead.set(false);conversationRead.set(false);}
                 body = auth.startsWith("admin.preview:") ? "{\"role\":\"ADMIN\"}" : "{\"role\":\"CASHIER\",\"branchName\":\"001 – Main Branch\",\"branchId\":1}";

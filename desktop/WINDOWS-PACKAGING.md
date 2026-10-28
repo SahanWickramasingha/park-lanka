@@ -10,6 +10,8 @@ The packaging script resolves an x64 JDK 17 from `-JavaHome`, `JAVA_HOME`, `C:\P
 
 `run.ps1` runs `package javafx:run` without `clean`, so development launch works while a packaged app-image is open. Windows locks the running image's bundled runtime files. An explicit `mvn clean` deletes `desktop/target`, including generated app-images, and fails if an app running there still holds those files open. Close that packaged app before an intentional clean build.
 
+The latest login connection fix is **0.2.2**. See [Login startup and connection diagnosis](LOGIN-CONNECTION.md) for the evidence, bounded 240-second readiness flow, Cancel/Retry behavior, regression results and exact updated `Setup.exe` path. The earlier verification entries below describe their dated builds.
+
 ## Supplied artwork
 
 `branding/source/park-lanka-logo.png` and `branding/source/park-lanka-icon.png` are the original attachments retained byte for byte. The login uses the full wordmark and tagline. Both sidebars use a 40px icon beside white **Park Lanka** text against the existing navy background. All image views preserve aspect ratio.
@@ -34,7 +36,7 @@ python .\desktop\branding\prepare-assets.py
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\desktop\package-windows.ps1 -Type app-image -ServerUrl 'http://localhost:8080'
 ```
 
-Use the actual HTTPS backend origin for deployment with `-ServerUrl 'https://your-backend-host'`. The script accepts only an HTTP(S) origin with no credentials, query, fragment or path. This public connection setting is stored as `parking.server.defaultUrl` in the launcher configuration.
+The default for both build types is `https://park-lanka.onrender.com`. The command above explicitly overrides it for local development; omit `-ServerUrl` for distribution. The script accepts only an HTTP(S) origin with no credentials, query, fragment or path. This public connection setting is stored as `parking.server.defaultUrl` in the launcher configuration. No environment file or saved developer connection is read or copied during packaging.
 
 Each build creates a new directory under `desktop/target/windows/build-<timestamp>-<id>/`. The script prints the exact executable path, ending in `image\Park Lanka\Park Lanka.exe`. Launch that executable, and distribute the **entire `Park Lanka` directory**, including `app/` and `runtime/`. The executable alone is insufficient. Users do not need a separately installed Java runtime. The backend remains a separately configured service.
 
@@ -57,10 +59,12 @@ Resolution order is `PARKING_SERVER_URL`, then an explicit `PARKING_DESKTOP_ENV_
 After installing WiX 3.x (the confirmed v3.14 location is discovered automatically):
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\desktop\package-windows.ps1 -Type exe -ServerUrl 'http://localhost:8080'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\desktop\package-windows.ps1 -Type exe
 ```
 
-`exe` is the default type. This builds an app-image first, then writes `installer/Park Lanka-0.2.0.exe` under that build's directory and prints the exact filename. WiX is checked before building an EXE; use `-Type app-image` if WiX is unavailable. `-OutputDirectory` accepts a fresh directory relative to the caller or an absolute path; existing directories are refused.
+`exe` is the default type. This builds an app-image first, then writes **`installer/Setup.exe`** under that build's directory and prints its full path and an exact PowerShell command to open the output folder. Distribute **only `Setup.exe`**: its embedded MSI contains the application, linked JDK 17 runtime, Windows JavaFX native libraries and all runtime dependencies. Renaming the jpackage output does not change the embedded Park Lanka product identity. WiX is checked before building an EXE; use `-Type app-image` if WiX is unavailable. `-OutputDirectory` accepts a fresh directory relative to the caller or an absolute path; existing directories are refused.
+
+The target is Windows x64. It needs internet access to the hosted API, but no installed Java, Maven, WiX or PostgreSQL. The backend API and Neon database remain separate services and are not shipped or changed. The default API is `https://park-lanka.onrender.com`; **Connection settings** and existing URL overrides remain available. Existing saved user settings may override the default. Installed users can uninstall **Park Lanka** from Windows **Settings > Apps**. Start Menu and desktop shortcuts launch the bundled runtime.
 
 The existing per-user installation identity is retained: application/install directory **Park Lanka**, Start menu group **Park Lanka**, upgrade UUID **6ea48f96-8068-4e93-b18b-38971a86e6e8**. Keep that UUID for future upgrades and increase the version in `pom.xml`. The EXE, installer, desktop shortcut and Start menu shortcut use the same supplied ICO. The workflow has no database migration, deletion or user-data cleanup steps. Rehearse install/upgrade on a test PC before distribution. Packages are unsigned unless signing is added separately.
 
@@ -117,3 +121,30 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\desktop\package-window
 - Packaging and native inspection found no environment files, databases or backups in the distributed application. CSS, receipt classes, JavaFX Windows native DLLs and all runtime dependencies were checked. No backend secrets, database connection settings or stored transaction data were copied.
 
 The installer is unsigned. Installation/uninstallation, installed shortcut activation, upgrade behavior on an existing installation, clean-machine compatibility and physical printing have **not** been tested. The classpath JavaFX startup warning and existing unchecked-source/Maven model warnings remain; the native launcher and UI checks passed.
+
+## Setup.exe verification on 2026-10-28
+
+Built **Park Lanka 0.2.1** with x64 JDK/jpackage 17.0.10, Maven 3.9.16 and WiX 3.14.1. The desktop patch version was increased from 0.2.0; the per-user install directory, product branding and upgrade UUID are unchanged.
+
+Single distributable (37,577,216 bytes):
+
+```text
+C:\Users\WW\Desktop\Parking-POS-SpringBoot-JavaFX-MVP\parking-pos\desktop\target\windows\build-20261028-113407-478c7dbb\installer\Setup.exe
+```
+
+Open its output folder:
+
+```powershell
+Invoke-Item -LiteralPath 'C:\Users\WW\Desktop\Parking-POS-SpringBoot-JavaFX-MVP\parking-pos\desktop\target\windows\build-20261028-113407-478c7dbb\installer'
+```
+
+SHA-256: `AB6B8FB7ADD720994DECBCCCD5136B997444576BEBC2FD260899D1E03837F844`.
+
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\desktop\package-windows.ps1 -Type exe` passed, including Maven compilation/package, runtime dependency copying, JDK runtime linking, JavaFX Windows DLL checks and EXE creation. The restricted sandbox could not reach Maven Central; the successful build used authorized access to the Maven cache/network and installed tools.
+- The launcher configuration contains `parking.server.defaultUrl=https://park-lanka.onrender.com`. The HTTPS trust store is bundled. Connection settings and user overrides were preserved; packaging did not read or copy saved developer connections.
+- The native app-image launcher reached **Park Lanka | Login**, exposed both window icons and loaded `jvm.dll` from its bundled runtime. Its seven embedded icon resolutions and packaged PNGs matched the source artwork. No live credentials were entered.
+- With `JAVA_HOME` set to JDK 17, `verify-ui.ps1 -AppImage` passed against this build's image. It covered fixture login/Admin/Cashier, connection settings, saved URL handling, checkout/shift recovery, messaging/reports and receipt/QR layouts. These tests used a temporary local HTTP fixture, not the hosted backend or Neon.
+- Extracted the EXE's embedded MSI as data and decompiled it with WiX `dark.exe`, without installing. All **157 installed files** matched the tested app-image byte for byte. The MSI contains an embedded cabinet, x64 per-user installation, enabled Start Menu and desktop shortcuts targeting `Park Lanka.exe`, Windows uninstall metadata and the preserved upgrade UUID. The app-image's `.jpackage.xml` is build-only metadata and is not installed.
+- The app payload and expanded JAR entries contained no prohibited environment/database/backup/private-key files. A read-only comparison against local secret values also found no matches; no secret values were printed or copied into the verification output. Spring Boot code/configuration and Neon were unchanged.
+
+**Installation, uninstallation, installed shortcuts, upgrades and live login were not tested on a clean Windows machine or on this development PC.** The installer is unsigned. Existing JavaFX unnamed-module and Maven/unchecked-source warnings remain; the build, native launch and UI regression checks passed. Distribute only `Setup.exe`, not the build manifest or inspection directories.

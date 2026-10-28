@@ -37,6 +37,8 @@ public class DesktopApp extends Application {
     private CheckoutCoordinator checkouts;
     private Stage stage;
     private final Supplier<String> serverUrl;
+    private final Function<ApiClient, LoginStartup> loginFactory;
+    private LoginStartup pendingLogin;
     private String selectedServerUrl;
     private String branchName = "Main Branch";
     private long refreshRequest;
@@ -47,7 +49,10 @@ public class DesktopApp extends Application {
     private String completedTicket="";
 
     public DesktopApp() { this(DesktopConfiguration::serverUrl); }
-    DesktopApp(Supplier<String> serverUrl) { this.serverUrl = Objects.requireNonNull(serverUrl); }
+    DesktopApp(Supplier<String> serverUrl) { this(serverUrl, LoginStartup::new); }
+    DesktopApp(Supplier<String> serverUrl, Function<ApiClient, LoginStartup> loginFactory) {
+        this.serverUrl = Objects.requireNonNull(serverUrl); this.loginFactory = Objects.requireNonNull(loginFactory);
+    }
 
     public static void main(String[] args) { launch(args); }
     @Override public void start(Stage stage) {
@@ -55,7 +60,7 @@ public class DesktopApp extends Application {
         System.out.println("Park Lanka desktop | "+DesktopBuildInfo.label()+" | PID "+ProcessHandle.current().pid()+" | source "+DesktopBuildInfo.source()+" | working directory "+System.getProperty("user.dir"));
         show(loginScene(), 940, 790); stage.show();
     }
-    @Override public void stop() { if (api != null) api.logOut(); if (notifications!=null)notifications.close(); if(conversations!=null)conversations.close(); if (messages != null) messages.close(); io.shutdownNow(); }
+    @Override public void stop() { if (pendingLogin != null) { pendingLogin.cancel(); pendingLogin = null; } if (api != null) api.logOut(); if (notifications!=null)notifications.close(); if(conversations!=null)conversations.close(); if (messages != null) messages.close(); io.shutdownNow(); }
     private void show(Scene scene, double width, double height) {
         stage.setScene(scene); Rectangle2D bounds = Screen.getPrimary().getVisualBounds();
         stage.setWidth(Math.min(width, bounds.getWidth() - 40)); stage.setHeight(Math.min(height, bounds.getHeight() - 40)); stage.centerOnScreen();
@@ -72,24 +77,54 @@ public class DesktopApp extends Application {
         Button connectionSettings = Ui.button("Connection settings", "secondary");
         connectionSettings.disableProperty().bind(loading);
         connectionSettings.setOnAction(event -> showConnectionSettings(validation));
-        connect.setOnAction(e -> {
+        Button cancel = Ui.button("Cancel", "secondary"), retry = Ui.button("Retry", "secondary");
+        cancel.visibleProperty().bind(loading); cancel.managedProperty().bind(loading);
+        retry.setVisible(false); retry.managedProperty().bind(retry.visibleProperty()); retry.disableProperty().bind(loading);
+        cancel.setOnAction(event -> {
+            LoginStartup attempt = pendingLogin; pendingLogin = null;
+            if (attempt != null) attempt.cancel();
+            loading.set(false); connect.setText("Connect to Workspace"); retry.setVisible(true);
+            Ui.notice(validation, "Connection cancelled. You can retry or change Connection settings.", false);
+        });
+        Runnable submit = () -> {
+            if (loading.get() || pendingLogin != null) return;
             if (username.getText().isBlank() || password.getText().isEmpty()) { Ui.notice(validation, "Enter your username and password.", true); return; }
             try {
                 ApiClient next = new ApiClient(selectedServerUrl == null ? serverUrl.get() : selectedServerUrl, username.getText().trim(), password.getText());
-                loading.set(true); connect.setText("Connecting..."); validation.setText("");
-                perform(client -> next.get("/api/me"), result -> {
-                    api = next; password.clear(); loginMessage = "";
-                    boolean admin = result.path("role").asText().equals("ADMIN");
-                    if (!admin) branchName = result.path("branchName").asText("Main Branch");
-                    stage.setTitle(DesktopBuildInfo.title(admin ? "Admin" : "Cashier"));
-                    show(admin ? adminScene() : mainScene(), 1366, 850); if (!admin) { refresh(); messages.start(); notifications.start(); }
-                }, message -> Ui.notice(validation, message, true), () -> { loading.set(false); connect.setText("Connect to Workspace"); }, () -> true);
+                LoginStartup attempt = loginFactory.apply(next); pendingLogin = attempt;
+                Scene loginScreen = stage.getScene();
+                loading.set(true); connect.setText("Connecting..."); retry.setVisible(false);
+                Ui.notice(validation, "Connecting to server… The first connection may take a few minutes.", false);
+                io.submit(() -> {
+                    JsonNode result = null; String failure = null;
+                    try { result = attempt.connect(); }
+                    catch (LoginStartup.Failure ex) { failure = ex.getMessage(); }
+                    catch (CancellationException | InterruptedException ex) { failure = "Connection cancelled. Please retry."; }
+                    catch (Exception ex) {
+                        // No raw server bodies/exception messages: they may contain private diagnostics.
+                        System.out.println("LOGIN endpoint=" + next.baseUrl() + " phase=failed failure=" + ex.getClass().getSimpleName());
+                        failure = "The server returned an unexpected response. Check Connection settings and retry.";
+                    }
+                    JsonNode authenticated = result; String message = failure;
+                    if (message != null) next.logOut();
+                    Platform.runLater(() -> {
+                        if (pendingLogin != attempt || !stage.isShowing() || stage.getScene() != loginScreen) { next.logOut(); return; }
+                        pendingLogin = null; loading.set(false); connect.setText("Connect to Workspace");
+                        if (message != null) { retry.setVisible(true); Ui.notice(validation, message, true); return; }
+                        api = next; password.clear(); loginMessage = "";
+                        boolean admin = authenticated.path("role").asText().equals("ADMIN");
+                        if (!admin) branchName = authenticated.path("branchName").asText("Main Branch");
+                        stage.setTitle(DesktopBuildInfo.title(admin ? "Admin" : "Cashier"));
+                        show(admin ? adminScene() : mainScene(), 1366, 850); if (!admin) { refresh(); messages.start(); notifications.start(); }
+                    });
+                });
             } catch (Exception ex) { Ui.notice(validation, ex.getMessage(), true); }
-        });
+        };
+        connect.setOnAction(event -> submit.run()); retry.setOnAction(event -> submit.run());
         javafx.scene.image.ImageView brand = BrandAssets.logo();
         VBox fields = new VBox(16, Ui.field("Username", username), Ui.field("Password", password));
         VBox box = Ui.style(Ui.card(brand, Ui.text("Welcome back", "login-title"),
-                Ui.text("Sign in to manage your parking workspace.", "muted"), fields, validation, connect,
+                Ui.text("Sign in to manage your parking workspace.", "muted"), fields, validation, connect, Ui.row(cancel, retry),
                 Ui.row(progress, Ui.text("Role-based admin and cashier access", "muted")),
                 Ui.text("HTTP is for trusted local networks. Use HTTPS for cloud access.", "login-footer"), connectionSettings), "login-card");
         box.setMaxWidth(470); box.setMaxHeight(Region.USE_PREF_SIZE);

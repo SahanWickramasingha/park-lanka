@@ -1,12 +1,15 @@
 param(
     [ValidateSet('app-image', 'exe')][string]$Type = 'exe',
-    [string]$ServerUrl = 'http://localhost:8080',
+    [string]$ServerUrl = 'https://park-lanka.onrender.com',
     [string]$MavenCommand,
     [string]$OutputDirectory,
     [string]$JavaHome,
     [string]$WixDirectory
 )
 $ErrorActionPreference = 'Stop'
+# Match private configuration/data filenames in both ZIP entries and Windows paths.
+$taskProhibitedPath = '(?i)(^|[\\/])(\.env[^\\/]*|[^\\/]*\.env(?:\.[^\\/]*)?|backups|logs)([\\/]|$)|\.(db|log|sql|backup|bak|key|pem|p12|pfx|jks)$'
+$taskUpgradeUuid = '6ea48f96-8068-4e93-b18b-38971a86e6e8'
 # Resolve explicit paths relative to the caller, before entering the desktop module.
 foreach ($taskParameter in @('OutputDirectory', 'JavaHome', 'WixDirectory')) {
     $taskValue = Get-Variable -Name $taskParameter -ValueOnly
@@ -129,10 +132,10 @@ try {
                 throw "Desktop JAR is missing branding resource: $taskArtwork"
             }
         }
-        foreach ($taskResource in @('theme.css', 'DesktopLauncher.class', 'DesktopConfiguration.class', 'ParkingPrintDocument.class', 'ThermalDocuments.class')) {
+        foreach ($taskResource in @('theme.css', 'DesktopLauncher.class', 'DesktopConfiguration.class', 'LoginStartup.class', 'ParkingPrintDocument.class', 'ThermalDocuments.class')) {
             if (-not $taskArchive.GetEntry("lk/sahan/parking/desktop/$taskResource")) { throw "Desktop JAR missing required resource: $taskResource" }
         }
-        if (@($taskArchive.Entries | Where-Object { $_.FullName -match '(^|/)(\.env[^/]*|backups|logs)(/|$)|\.(db|log|sql|backup)$' }).Count) {
+        if (@($taskArchive.Entries | Where-Object { $_.FullName -match $taskProhibitedPath }).Count) {
             throw 'Desktop JAR contains prohibited configuration, database, backup or log entries.'
         }
     } finally { $taskArchive.Dispose() }
@@ -140,7 +143,12 @@ try {
     foreach ($taskDependency in (Get-ChildItem -LiteralPath $taskLib -File)) {
         if ($taskDependency.Extension -ne '.jar') { throw "Unexpected non-JAR runtime dependency: $($taskDependency.Name)" }
         $taskDependencyZip = [IO.Compression.ZipFile]::OpenRead($taskDependency.FullName)
-        try { $taskNativeLibraries += @($taskDependencyZip.Entries | Where-Object { $_.Name -like '*.dll' } | ForEach-Object Name) }
+        try {
+            if (@($taskDependencyZip.Entries | Where-Object { $_.FullName -match $taskProhibitedPath }).Count) {
+                throw "Runtime dependency contains prohibited configuration/data files: $($taskDependency.Name)"
+            }
+            $taskNativeLibraries += @($taskDependencyZip.Entries | Where-Object { $_.Name -like '*.dll' } | ForEach-Object Name)
+        }
         finally { $taskDependencyZip.Dispose() }
     }
     foreach ($taskNative in @('glass.dll', 'prism_d3d.dll', 'javafx_font.dll', 'javafx_iio.dll')) {
@@ -157,13 +165,17 @@ try {
     & $taskPackager @taskImageArgs
     if ($LASTEXITCODE -ne 0) { throw 'jpackage app-image failed.' }
     $taskImage = Join-Path $taskImageDestination 'Park Lanka'
-    foreach ($taskRequired in @('Park Lanka.exe', 'runtime\bin\server\jvm.dll', 'app\Park Lanka.cfg', "app\$taskJarName")) {
+    foreach ($taskRequired in @('Park Lanka.exe', 'runtime\bin\server\jvm.dll', 'runtime\lib\security\cacerts', 'app\Park Lanka.cfg', "app\$taskJarName")) {
         if (-not (Test-Path -LiteralPath (Join-Path $taskImage $taskRequired))) { throw "App-image is incomplete: $taskRequired" }
     }
-    if (@(Get-ChildItem -LiteralPath $taskImage -Recurse -File | Where-Object { $_.Name -like '.env*' -or $_.Extension -in @('.db', '.log', '.sql', '.backup') }).Count) {
+    if (@(Get-ChildItem -LiteralPath $taskImage -Recurse -File | Where-Object { $_.FullName.Substring($taskImage.Length) -match $taskProhibitedPath }).Count) {
         throw 'App-image contains prohibited configuration, database, backup or log files.'
     }
     Write-Host "App-image ready: $taskImage\Park Lanka.exe"
+    $taskLauncherConfig = Get-Content -LiteralPath (Join-Path $taskImage 'app\Park Lanka.cfg')
+    if (@($taskLauncherConfig | Where-Object { $_ -eq "java-options=-Dparking.server.defaultUrl=$ServerUrl" }).Count -ne 1) {
+        throw 'App-image launcher does not contain the requested public API default.'
+    }
 
     $taskInstaller = $null
     if ($Type -eq 'exe') {
@@ -172,17 +184,23 @@ try {
             '--vendor', 'Park Lanka', '--description', 'Park Lanka - Smart Parking. Simple Control.',
             '--app-image', $taskImage, '--icon', $taskIcon, '--dest', (Join-Path $taskOutput 'installer'),
             '--win-per-user-install', '--win-menu', '--win-menu-group', 'Park Lanka', '--win-shortcut',
-            '--install-dir', 'Park Lanka', '--win-upgrade-uuid', '6ea48f96-8068-4e93-b18b-38971a86e6e8')
+            '--install-dir', 'Park Lanka', '--win-upgrade-uuid', $taskUpgradeUuid)
         & $taskPackager @taskInstallerArgs
         if ($LASTEXITCODE -ne 0) { throw 'jpackage EXE installer failed; the app-image is still available.' }
-        $taskInstaller = Join-Path $taskOutput "installer\Park Lanka-$taskVersion.exe"
-        if (-not (Test-Path -LiteralPath $taskInstaller -PathType Leaf)) { throw "jpackage did not produce the expected installer: $taskInstaller" }
+        $taskGeneratedInstaller = Join-Path $taskOutput "installer\Park Lanka-$taskVersion.exe"
+        if (-not (Test-Path -LiteralPath $taskGeneratedInstaller -PathType Leaf)) { throw "jpackage did not produce the expected installer: $taskGeneratedInstaller" }
+        # Rename only the output file: keep Park Lanka's embedded product/upgrade identity.
+        Rename-Item -LiteralPath $taskGeneratedInstaller -NewName 'Setup.exe'
+        $taskInstaller = Join-Path $taskOutput 'installer\Setup.exe'
         Write-Host "Installer ready: $taskInstaller"
+        Write-Host 'Distribute Setup.exe alone; it includes the application, dependencies and Java runtime.'
+        $taskInstallerFolder = (Split-Path $taskInstaller -Parent).Replace("'", "''")
+        Write-Host "Open output folder: Invoke-Item -LiteralPath '$taskInstallerFolder'"
     }
     $taskManifest = [ordered]@{
         version = $taskVersion; javaHome = $taskJdk; maven = $MavenCommand; wix = $taskWixBin
         appImage = $taskImage; installer = $taskInstaller
-        upgradeUuid = '6ea48f96-8068-4e93-b18b-38971a86e6e8'
+        upgradeUuid = $taskUpgradeUuid
         serverDefaultUrl = $ServerUrl; builtAt = [DateTimeOffset]::Now.ToString('o')
         desktopJarSha256 = (Get-FileHash -LiteralPath $taskJar -Algorithm SHA256).Hash
         installerSha256 = $(if ($taskInstaller) { (Get-FileHash -LiteralPath $taskInstaller -Algorithm SHA256).Hash } else { $null })
